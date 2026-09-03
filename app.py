@@ -1,15 +1,17 @@
 import re
-import cloudscraper
+import requests
 from bs4 import BeautifulSoup
 import streamlit as st
 
 st.set_page_config(page_title="Simulador Importação DIY", layout="wide", page_icon="🚗")
 st.title("🚗 Simulador de Importação Automóvel DIY")
 
+# API Key da ScraperAPI
+SCRAPER_API_KEY = "5a4fc861fce9d8a20fbb727673def88a"
+
 def extrair_dados_mobile_de(url):
-    """Extrai os dados do anúncio diretamente no Mobile.de usando cloudscraper."""
+    """Extrai os dados do anúncio no Mobile.de via ScraperAPI."""
     try:
-        # Extrai o ID do anúncio a partir do URL
         match_id = re.search(r"id=(\d+)", url) or re.search(r"(\d{8,10})", url)
         if not match_id:
             return None, "Não foi possível identificar o ID do anúncio no URL."
@@ -17,18 +19,16 @@ def extrair_dados_mobile_de(url):
         ad_id = match_id.group(1)
         target_url = f"https://suchen.mobile.de/fahrzeuge/details.html?id={ad_id}&lang=de"
 
-        # Simula um navegador real para contornar bloqueios
-        scraper = cloudscraper.create_scraper(
-            browser={
-                'browser': 'chrome',
-                'platform': 'windows',
-                'desktop': True
-            }
-        )
-
-        res = scraper.get(target_url, timeout=15)
+        # Chamada via ScraperAPI com renderização e bypass de proteção
+        payload = {
+            'api_key': SCRAPER_API_KEY,
+            'url': target_url,
+            'render': 'false'
+        }
+        
+        res = requests.get('http://api.scraperapi.com', params=payload, timeout=30)
         if res.status_code != 200:
-            return None, f"O Mobile.de recusou a ligação (Código {res.status_code})."
+            return None, f"Erro ao aceder ao anúncio (Código {res.status_code})."
 
         soup = BeautifulSoup(res.text, "html.parser")
         texto = soup.get_text()
@@ -92,7 +92,7 @@ url_link = st.text_input("Link do anúncio (Mobile.de):", placeholder="Cole aqui
 
 if st.button("🔎 Extrair Dados do Anúncio"):
     if url_link:
-        with st.spinner("A importar dados do Mobile.de..."):
+        with st.spinner("A conectar via ScraperAPI e extrair especificações..."):
             dados_extraidos, erro = extrair_dados_mobile_de(url_link)
             if dados_extraidos:
                 st.session_state.dados = dados_extraidos
