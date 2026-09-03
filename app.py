@@ -1,46 +1,41 @@
 import re
-import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 import streamlit as st
 
-st.set_page_config(
-    page_title="Simulador Importação DIY", layout="wide", page_icon="🚗"
-)
+st.set_page_config(page_title="Simulador Importação DIY", layout="wide", page_icon="🚗")
 st.title("🚗 Simulador de Importação Automóvel DIY")
 
-
 def extrair_dados_mobile_de(url):
-    """Extrai os dados do anúncio no Mobile.de contornando bloqueios de IP."""
+    """Extrai os dados do anúncio diretamente no Mobile.de usando cloudscraper."""
     try:
+        # Extrai o ID do anúncio a partir do URL
         match_id = re.search(r"id=(\d+)", url) or re.search(r"(\d{8,10})", url)
         if not match_id:
             return None, "Não foi possível identificar o ID do anúncio no URL."
 
         ad_id = match_id.group(1)
-        api_url = f"https://suchen.mobile.de/fahrzeuge/details.html?id={ad_id}&lang=de"
+        target_url = f"https://suchen.mobile.de/fahrzeuge/details.html?id={ad_id}&lang=de"
 
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                " (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
-        }
+        # Simula um navegador real para contornar bloqueios
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+            }
+        )
 
-        # Requisição via proxy para evitar bloqueios no Streamlit Cloud
-        proxy_url = f"https://api.allorigins.win/raw?url={requests.utils.quote(api_url)}"
-        res = requests.get(proxy_url, headers=headers, timeout=15)
-
+        res = scraper.get(target_url, timeout=15)
         if res.status_code != 200:
-            return None, "O Mobile.de recusou a ligação ao anúncio."
+            return None, f"O Mobile.de recusou a ligação (Código {res.status_code})."
 
-        texto = res.text
+        soup = BeautifulSoup(res.text, "html.parser")
+        texto = soup.get_text()
 
         # Extração de Preço (€)
         preco = 16999.00
-        m_preco = re.search(
-            r'["\']price["\']:\s*\{\s*["\']gross["\']:\s*([\d\.]+)', texto
-        ) or re.search(r"€\s?([\d\.]+)", texto)
+        m_preco = re.search(r'["\']price["\']:\s*\{\s*["\']gross["\']:\s*([\d\.]+)', texto) or re.search(r"€\s?([\d\.]+)", texto)
         if m_preco:
             preco = float(m_preco.group(1).replace(".", ""))
 
@@ -58,13 +53,9 @@ def extrair_dados_mobile_de(url):
 
         # Extração de Idade (Anos)
         idade = 4
-        m_ano = re.search(
-            r"(0[1-9]|1[0-2])\/((?:19|20)\d{2})", texto
-        ) or re.search(r'["\']firstRegistration["\']:\s*["\'](\d{4})', texto)
+        m_ano = re.search(r"(0[1-9]|1[0-2])\/((?:19|20)\d{2})", texto) or re.search(r'["\']firstRegistration["\']:\s*["\'](\d{4})', texto)
         if m_ano:
-            ano = int(
-                m_ano.group(2) if len(m_ano.groups()) > 1 else m_ano.group(1)
-            )
+            ano = int(m_ano.group(2) if len(m_ano.groups()) > 1 else m_ano.group(1))
             idade = max(0, 2026 - ano)
 
         # Extração de Combustível
@@ -81,12 +72,11 @@ def extrair_dados_mobile_de(url):
             "cc": cc,
             "co2": co2,
             "idade": idade,
-            "combustivel": combustivel,
+            "combustivel": combustivel
         }, None
 
     except Exception as e:
         return None, f"Erro ao processar anúncio: {str(e)}"
-
 
 # Estado inicial dos campos
 if "dados" not in st.session_state:
@@ -95,13 +85,10 @@ if "dados" not in st.session_state:
         "combustivel": "Gasolina",
         "cc": 1200,
         "co2": 115,
-        "idade": 4,
+        "idade": 4
     }
 
-url_link = st.text_input(
-    "Link do anúncio (Mobile.de):",
-    placeholder="Cole aqui o URL do anúncio...",
-)
+url_link = st.text_input("Link do anúncio (Mobile.de):", placeholder="Cole aqui o URL do anúncio...")
 
 if st.button("🔎 Extrair Dados do Anúncio"):
     if url_link:
@@ -111,44 +98,23 @@ if st.button("🔎 Extrair Dados do Anúncio"):
                 st.session_state.dados = dados_extraidos
                 st.success("Dados importados com sucesso!")
             else:
-                st.warning(
-                    f"{erro} Ajusta os valores manualmente se necessário."
-                )
+                st.warning(f"{erro} Ajusta os valores manualmente se necessário.")
 
 st.divider()
 
-# Formulário de Dados
 col1, col2 = st.columns(2)
 with col1:
-    preco = st.number_input(
-        "Preço na Origem (€)",
-        value=float(st.session_state.dados["preco"]),
-        step=500.0,
-    )
+    preco = st.number_input("Preço na Origem (€)", value=float(st.session_state.dados["preco"]), step=500.0)
     combustivel = st.selectbox(
         "Combustível",
         ["Gasolina", "Diesel", "Elétrico", "Híbrido Plug-in", "Híbrido"],
-        index=[
-            "Gasolina",
-            "Diesel",
-            "Elétrico",
-            "Híbrido Plug-in",
-            "Híbrido",
-        ].index(st.session_state.dados["combustivel"]),
+        index=["Gasolina", "Diesel", "Elétrico", "Híbrido Plug-in", "Híbrido"].index(st.session_state.dados["combustivel"])
     )
-    cilindrada = st.number_input(
-        "Cilindrada (cm³)", value=int(st.session_state.dados["cc"]), step=100
-    )
+    cilindrada = st.number_input("Cilindrada (cm³)", value=int(st.session_state.dados["cc"]), step=100)
 
 with col2:
-    co2 = st.number_input(
-        "Emissões CO2 (g/km)",
-        value=int(st.session_state.dados["co2"]),
-        step=5,
-    )
-    idade = st.number_input(
-        "Idade (Anos)", value=int(st.session_state.dados["idade"]), min_value=0
-    )
+    co2 = st.number_input("Emissões CO2 (g/km)", value=int(st.session_state.dados["co2"]), step=5)
+    idade = st.number_input("Idade (Anos)", value=int(st.session_state.dados["idade"]), min_value=0)
 
 st.divider()
 st.subheader("Custos Adicionais & Legalização")
@@ -157,9 +123,7 @@ col3, col4 = st.columns(2)
 with col3:
     transporte = st.number_input("Transporte (Camião)", value=1230.00)
     inspecao = st.number_input("Inspeção B", value=93.00)
-    despachante = st.number_input(
-        "Despachante (70IMT+55RI+Honorários)", value=309.50
-    )
+    despachante = st.number_input("Despachante (70IMT+55RI+Honorários)", value=309.50)
 
 with col4:
     mediacao = st.number_input("Mediação", value=1000.00)
@@ -178,15 +142,7 @@ else:
 if isv <= 0:
     isv = 146.19
 
-despesas = (
-    transporte
-    + inspecao
-    + despachante
-    + mediacao
-    + custos_admin
-    + matriculas
-    + isv
-)
+despesas = transporte + inspecao + despachante + mediacao + custos_admin + matriculas + isv
 total = preco + despesas
 
 st.divider()
